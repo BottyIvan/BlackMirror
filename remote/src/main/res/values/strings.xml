@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Black Mirror Remote</string>
+    <string name="API_KEY">AIzaSyBXyuUol6ro2Nuqdk4freGmF8OgiECA1fQ	</string>
+    <string name="discover_nearby_devices">Discover nearby devices</string>
+    <string name="share_device_information">Share device information</string>
+</resources>
