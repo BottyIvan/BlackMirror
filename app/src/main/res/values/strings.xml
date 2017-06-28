@@ -19,7 +19,31 @@
     <string name="good_morning">Ciao, buon giorno!</string>
     <string name="good_afternoon">Buon pomeriggio, sei mitico.</string>
     <string name="good_evening">Finalmente relaxxxx !</string>
-    <string name="good_night">Esci e divertiti ;)</string>
+    <string name="good_night">Good Night My Puddin\'</string>
+    
+    <string name="thunder_morning">E\' un brutto risveglio, c\'è il temporale</string>
+    <string name="thunder_afternoon">Questa giornata potrebbe peggiorare ? Io non credo…</string>
+    <string name="thunder_evening">Credimi meglio un bel film</string>
+    
+    <string name="drizzle_morning">Purtroppo c\'è la pioggerelle, dio quanto mi sta su in nervi !</string>
+    <string name="drizzle_afternoon">Beh dai sei già a metà giornata, porta pazienza</string>
+    <string name="drizzle_evening">Puoi sempre andare in qualche bar</string>
+
+    <string name="rainy_morning">E niente questo ti fa capire come sarà la giornata, \'na schifezza</string>
+    <string name="rainy_afternoon">Incrocio le dita per la sera</string>
+    <string name="rainy_evening">Forse dio ti vuole male, sai ? </string>
+
+    <string name="snowy_morning">Ehm qualcuno ha detto pupazzo di neve ? :D</string>
+    <string name="snowy_afternoon">Una bella battaglia con le palle da neve.. ci sta!</string>
+    <string name="snowy_evening">FAI ATTENZIONE ! GUIDA PIANO !</string>
+
+    <string name="foggy_morning">Se avessi un naso non vedrei un cavolo</string>
+    <string name="foggy_afternoon">Beh almeno eviti di vedere i roiti che ci sono in giro ahahahah</string>
+    <string name="foggy_evening">Beh è una serata spettrale, sarebbe perfetto se fosse Halloween !</string>
+
+    <string name="cloudy_morning">Beh almeno non ti scotterai</string>
+    <string name="cloudy_afternoon">Vai a farti un bel bagno in piscina</string>
+    <string name="cloudy_evening">Non si morirà di caldo</string>
 
     <string name="APIKey">AIzaSyBXyuUol6ro2Nuqdk4freGmF8OgiECA1fQ</string>
     <string name="discover_nearby_devices">Discover nearby devices</string>

@@ -6,6 +6,8 @@ package com.botty.blackmirror.Weather;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.icu.util.Calendar;
 import android.media.AudioManager;
@@ -57,58 +59,10 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.UUID;
 
-public class WeatherFragment extends Fragment implements GoogleApiClient.ConnectionCallbacks,
-        GoogleApiClient.OnConnectionFailedListener, TextToSpeech.OnInitListener, TextToSpeech.OnUtteranceCompletedListener {
+public class WeatherFragment extends Fragment implements TextToSpeech.OnInitListener, TextToSpeech.OnUtteranceCompletedListener {
 
-    private static final int TTL_IN_SECONDS = 3 * 60; // Three minutes.
+    private static final int TTL_IN_SECONDS = 600000; // 10 minutes.
 
-    // Key used in writing to and reading from SharedPreferences.
-    private static final String KEY_UUID = "key_uuid";
-
-    /**
-     * Sets the time in seconds for a published message or a subscription to live. Set to three
-     * minutes in this sample.
-     */
-    private static final Strategy PUB_SUB_STRATEGY = new Strategy.Builder()
-            .setTtlSeconds(TTL_IN_SECONDS).build();
-
-    /**
-     * Creates a UUID and saves it to {@link SharedPreferences}. The UUID is added to the published
-     * message to avoid it being undelivered due to de-duplication. See {@link DeviceMessage} for
-     * details.
-     */
-    private static String getUUID(SharedPreferences sharedPreferences) {
-        String uuid = sharedPreferences.getString(KEY_UUID, "");
-        if (TextUtils.isEmpty(uuid)) {
-            uuid = UUID.randomUUID().toString();
-            sharedPreferences.edit().putString(KEY_UUID, uuid).apply();
-        }
-        return uuid;
-    }
-
-    /**
-     * The entry point to Google Play Services.
-     */
-    private GoogleApiClient mGoogleApiClient;
-
-    // Views.
-    private SwitchCompat mPublishSwitch;
-    private SwitchCompat mSubscribeSwitch;
-
-    /**
-     * The {@link Message} object used to broadcast information about the device to nearby devices.
-     */
-    private Message mPubMessage;
-
-    /**
-     * A {@link MessageListener} for processing messages from nearby devices.
-     */
-    private MessageListener mMessageListener;
-
-    /**
-     * Adapter for working with messages from nearby publishers.
-     */
-    private ArrayAdapter<String> mNearbyDevicesArrayAdapter;
     private static final String TAG = "WeatherFragment";
     Typeface weatherFont;
 
@@ -123,6 +77,7 @@ public class WeatherFragment extends Fragment implements GoogleApiClient.Connect
     int timeOfDay = c.get(Calendar.HOUR_OF_DAY);
 
     TextView mSSID;
+    TextView mVerApp;
 
     TextToSpeech ttsEngine;
     int timeDaySpeak;
@@ -138,62 +93,12 @@ public class WeatherFragment extends Fragment implements GoogleApiClient.Connect
         handler = new Handler();
     }
 
+    private Thread repeatTaskThread;
+
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_weather, container, false);
-
-
-
-        mSubscribeSwitch = (SwitchCompat)rootView.findViewById(R.id.subscribe_switch);
-        mPublishSwitch = (SwitchCompat) rootView.findViewById(R.id.publish_switch);
-
-        final LinearLayout linearLayout =(LinearLayout) rootView.findViewById(R.id.background);
-        mPubMessage = DeviceMessage.newNearbyMessage(null);
-        mMessageListener = new MessageListener() {
-            @Override
-            public void onFound(final Message message) {
-                // Called when a new message is found.
-                String str = DeviceMessage.fromNearbyMessage(message).getMessageBody();
-                if (str.contains("viola")){
-                    linearLayout.setBackgroundColor(getActivity().getColor(R.color.colorAccent));
-                }
-            }
-
-            @Override
-            public void onLost(final Message message) {
-                // Called when a message is no longer detectable nearby.
-            }
-        };
-
-
-        mPublishSwitch.setChecked(false);
-        mSubscribeSwitch.setChecked(true);
-        // If GoogleApiClient is connected, perform sub actions in response to user action.
-        // If it isn't connected, do nothing, and perform sub actions when it connects (see
-        // onConnected()).
-        if (mGoogleApiClient != null && mGoogleApiClient.isConnected()) {
-            if (mPublishSwitch.isChecked()) {
-                subscribe();
-            } else {
-                unsubscribe();
-            }
-        }
-
-        // If GoogleApiClient is connected, perform pub actions in response to user action.
-        // If it isn't connected, do nothing, and perform pub actions when it connects (see
-        // onConnected()).
-        if (mGoogleApiClient != null && mGoogleApiClient.isConnected()) {
-            if (mSubscribeSwitch.isChecked()) {
-                publish();
-            } else {
-                unpublish();
-            }
-        }
-
-
-        buildGoogleApiClient();
-
 
         cityField = (TextView)rootView.findViewById(R.id.city_field);
         updatedField = (TextView)rootView.findViewById(R.id.updated_field);
@@ -203,19 +108,8 @@ public class WeatherFragment extends Fragment implements GoogleApiClient.Connect
 
         mMotivational = (TextView) rootView.findViewById(R.id.motivational_phrase);
 
-        if(timeOfDay >= 0 && timeOfDay < 12){
-            mMotivational.setText(R.string.good_morning);
-            timeDaySpeak = 1;
-        }else if(timeOfDay >= 12 && timeOfDay < 16){
-            mMotivational.setText(R.string.good_afternoon);
-            timeDaySpeak = 2;
-        }else if(timeOfDay >= 16 && timeOfDay < 21){
-            mMotivational.setText(R.string.good_evening);
-            timeDaySpeak = 3;
-        }else if(timeOfDay >= 21 && timeOfDay < 24){
-            mMotivational.setText(R.string.good_night);
-            timeDaySpeak = 4;
-        }
+        mVerApp = (TextView) rootView.findViewById(R.id.appVer);
+        mVerApp.setText(getVersionApp(getActivity()));
 
         mSSID = (TextView) rootView.findViewById(R.id.ssid);
         mSSID.setText(getCurrentSsid(getContext()));
@@ -230,8 +124,32 @@ public class WeatherFragment extends Fragment implements GoogleApiClient.Connect
         super.onCreate(savedInstanceState);
 
         weatherFont = Typeface.createFromAsset(getActivity().getAssets(), "Fonts/weather.ttf");
-        updateWeatherData(new CityPreference(getActivity()).getCity());
+        RepeatTask();
+    }
 
+    private void RepeatTask() {
+        repeatTaskThread = new Thread() {
+            public void run() {
+                while (true) {
+                    // Update TextView in runOnUiThread
+                    getActivity().runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            updateWeatherData(new CityPreference(getActivity()).getCity());
+                            Log.w(TAG,"Fetching new data and saying it");
+                        }
+                    });
+                    try {
+                        // Sleep for 10 minutes
+                        Thread.sleep(TTL_IN_SECONDS);
+                    }
+                    catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            };
+        };
+        repeatTaskThread.start();
     }
 
     private void updateWeatherData(final String city){
@@ -298,44 +216,156 @@ public class WeatherFragment extends Fragment implements GoogleApiClient.Connect
             if(currentTime>=sunrise && currentTime<sunset) {
                 icon = getActivity().getString(R.string.weather_sunny);
                 correctPhareseAI = "Il tempo è bello, è ";
+                switch (TimeOf()){
+                    case 1:
+                        mMotivational.setText(R.string.good_morning);
+                        break;
+                    case 2:
+                        mMotivational.setText(R.string.good_afternoon);
+                        break;
+                    case 3:
+                        mMotivational.setText(R.string.good_evening);
+                        break;
+                    case 4:
+                        //notare l'esater egg :D
+                        mMotivational.setText(R.string.good_night);
+                        break;
+                }
             } else {
                 icon = getActivity().getString(R.string.weather_clear_night);
                 correctPhareseAI = "E' una bella serata, il cielo è ";
+                mMotivational.setText("E' una bella serata");
             }
         } else {
             switch(id) {
                 case 2 : icon = getActivity().getString(R.string.weather_thunder);
                     correctPhareseAI = "Il tempo è brutto, ci sono i ";
+                    switch (TimeOf()){
+                        case 1:
+                            mMotivational.setText(R.string.thunder_morning);
+                            break;
+                        case 2:
+                            mMotivational.setText(R.string.thunder_afternoon);
+                            break;
+                        case 3:
+                            mMotivational.setText(R.string.thunder_evening);
+                            break;
+                        case 4:
+                            //notare l'esater egg :D
+                            mMotivational.setText(R.string.good_night);
+                            break;
+                    }
                     break;
                 case 3 : icon = getActivity().getString(R.string.weather_drizzle);
-                    correctPhareseAI = "Il tmepo è brutto, sta ";
+                    correctPhareseAI = "Il tempo è brutto, sta ";
+                    switch (TimeOf()){
+                        case 1:
+                            mMotivational.setText(R.string.drizzle_morning);
+                            break;
+                        case 2:
+                            mMotivational.setText(R.string.drizzle_afternoon);
+                            break;
+                        case 3:
+                            mMotivational.setText(R.string.drizzle_evening);
+                            break;
+                        case 4:
+                            //notare l'esater egg :D
+                            mMotivational.setText(R.string.good_night);
+                            break;
+                    }
                     break;
                 case 7 : icon = getActivity().getString(R.string.weather_foggy);
                     correctPhareseAI = "Il tempo è brutto, c'è la ";
+                    switch (TimeOf()){
+                        case 1:
+                            mMotivational.setText(R.string.foggy_morning);
+                            break;
+                        case 2:
+                            mMotivational.setText(R.string.foggy_afternoon);
+                            break;
+                        case 3:
+                            mMotivational.setText(R.string.foggy_evening);
+                            break;
+                        case 4:
+                            //notare l'esater egg :D
+                            mMotivational.setText(R.string.good_night);
+                            break;
+                    }
                     break;
                 case 8 : icon = getActivity().getString(R.string.weather_cloudy);
                     correctPhareseAI = "Il tempo è abbastanza bello ma ci sono le ";
+                    switch (TimeOf()){
+                        case 1:
+                            mMotivational.setText(R.string.cloudy_morning);
+                            break;
+                        case 2:
+                            mMotivational.setText(R.string.cloudy_afternoon);
+                            break;
+                        case 3:
+                            mMotivational.setText(R.string.cloudy_evening);
+                            break;
+                        case 4:
+                            //notare l'esater egg :D
+                            mMotivational.setText(R.string.good_night);
+                            break;
+                    }
                     break;
                 case 6 : icon = getActivity().getString(R.string.weather_snowy);
                     correctPhareseAI = "Il tempo è bello, c'è la ";
+                    switch (TimeOf()){
+                        case 1:
+                            mMotivational.setText(R.string.snowy_morning);
+                            break;
+                        case 2:
+                            mMotivational.setText(R.string.snowy_afternoon);
+                            break;
+                        case 3:
+                            mMotivational.setText(R.string.snowy_evening);
+                            break;
+                        case 4:
+                            //notare l'esater egg :D
+                            mMotivational.setText(R.string.good_night);
+                            break;
+                    }
                     break;
                 case 5 : icon = getActivity().getString(R.string.weather_rainy);
                     correctPhareseAI = "Il tempo brutto, c'è la ";
+                    switch (TimeOf()){
+                        case 1:
+                            mMotivational.setText(R.string.rainy_morning);
+                            break;
+                        case 2:
+                            mMotivational.setText(R.string.rainy_afternoon);
+                            break;
+                        case 3:
+                            mMotivational.setText(R.string.rainy_evening);
+                            break;
+                        case 4:
+                            //notare l'esater egg :D
+                            mMotivational.setText(R.string.good_night);
+                            break;
+                    }
                     break;
             }
         }
         weatherIcon.setText(icon);
     }
 
-    public void changeCity(String city){
-        updateWeatherData(city);
+    public int TimeOf(){
+        if(timeOfDay >= 0 && timeOfDay < 12){
+            timeDaySpeak = 1;
+        }else if(timeOfDay >= 12 && timeOfDay < 16){
+            timeDaySpeak = 2;
+        }else if(timeOfDay >= 16 && timeOfDay < 21){
+            timeDaySpeak = 3;
+        }else if(timeOfDay >= 21 && timeOfDay < 24){
+            timeDaySpeak = 4;
+        }
+        return timeDaySpeak;
     }
 
-    public boolean isNetworkAvailable() {
-        ConnectivityManager connectivityManager
-                = (ConnectivityManager) getActivity().getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
-        return activeNetworkInfo != null && activeNetworkInfo.isConnected();
+    public void changeCity(String city){
+        updateWeatherData(city);
     }
 
     public static String getCurrentSsid(Context context) {
@@ -354,6 +384,20 @@ public class WeatherFragment extends Fragment implements GoogleApiClient.Connect
             ssid = "Offline";
         }
         return ssid;
+    }
+
+    public static String getVersionApp(Context context){
+        PackageInfo pInfo = null;
+        String str = null;
+        try {
+            pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+        }
+        String version = pInfo.versionName;
+        int verCode = pInfo.versionCode;
+        str =  context.getString(R.string.app_name)+" "+" "+version+" ( "+verCode+" ) ";
+        return str;
     }
 
     public void onInit(int status) {
@@ -381,14 +425,15 @@ public class WeatherFragment extends Fragment implements GoogleApiClient.Connect
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getContext());
             if (!prefs.getBoolean("firstTime", false)) {
                 // <---- run your one time code here
-                speak("Ciao, Sono black mirror. Sono una sottospecie di assistente vocale ! Quindi... ");
+                speak("Ciao, Sono black mirror. Sono una sottospecie di assistente vocale ! Quindi... Ecco le informazioni " + phraseToSay + correctPhareseAI + detailsWeatherToSay + " a " + cityWeatherToSay + " e ci sono " + currentTemperatureToSay + " gradi.");
                 // mark first time has runned.
                 SharedPreferences.Editor editor = prefs.edit();
                 editor.putBoolean("firstTime", true);
                 editor.commit();
-            }
-            speak("hey," + phraseToSay + correctPhareseAI + detailsWeatherToSay + " a " + cityWeatherToSay + " e ci sono " + currentTemperatureToSay + " gradi.");
             } else {
+                speak("Ciao," + phraseToSay + correctPhareseAI + detailsWeatherToSay + " a " + cityWeatherToSay + " e ci sono " + currentTemperatureToSay + " gradi.");
+            }
+        } else {
             Log.e("TTS", "Initilization Failed!");
         }
     }
@@ -418,142 +463,6 @@ public class WeatherFragment extends Fragment implements GoogleApiClient.Connect
             ttsEngine.shutdown();
         }
         super.onDestroy();
-    }
-
-
-    /*
-    This is for GoogleApi Client
-     */
-
-    /**
-     * Builds {@link GoogleApiClient}, enabling automatic lifecycle management using
-     * {@link GoogleApiClient.Builder#enableAutoManage(FragmentActivity,
-     * int, GoogleApiClient.OnConnectionFailedListener)}. I.e., GoogleApiClient connects in
-     * {@link AppCompatActivity#onStart}, or if onStart() has already happened, it connects
-     * immediately, and disconnects automatically in {@link AppCompatActivity#onStop}.
-     */
-    private void buildGoogleApiClient() {
-        if (mGoogleApiClient != null) {
-            return;
-        }
-        mGoogleApiClient = new GoogleApiClient.Builder(getActivity())
-                .addApi(Nearby.MESSAGES_API)
-                .addConnectionCallbacks(this)
-                .enableAutoManage(getActivity(), this)
-                .build();
-    }
-
-    @Override
-    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
-        mPublishSwitch.setEnabled(false);
-        mSubscribeSwitch.setEnabled(false);
-    }
-
-    @Override
-    public void onConnectionSuspended(int i) {
-    }
-
-    @Override
-    public void onConnected(@Nullable Bundle bundle) {
-        Log.i(TAG, "GoogleApiClient connected");
-        // We use the Switch buttons in the UI to track whether we were previously doing pub/sub (
-        // switch buttons retain state on orientation change). Since the GoogleApiClient disconnects
-        // when the activity is destroyed, foreground pubs/subs do not survive device rotation. Once
-        // this activity is re-created and GoogleApiClient connects, we check the UI and pub/sub
-        // again if necessary.
-        if (mPublishSwitch.isChecked()) {
-            publish();
-        }
-        if (mSubscribeSwitch.isChecked()) {
-            subscribe();
-        }
-    }
-
-    /**
-     * Subscribes to messages from nearby devices and updates the UI if the subscription either
-     * fails or TTLs.
-     */
-    private void subscribe() {
-        Log.i(TAG, "Subscribing");
-//        mNearbyDevicesArrayAdapter.clear();
-        SubscribeOptions options = new SubscribeOptions.Builder()
-                .setStrategy(PUB_SUB_STRATEGY)
-                .setCallback(new SubscribeCallback() {
-                    @Override
-                    public void onExpired() {
-                        super.onExpired();
-                        Log.i(TAG, "No longer subscribing");
-                        getActivity().runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                mSubscribeSwitch.setChecked(false);
-                            }
-                        });
-                    }
-                }).build();
-
-        Nearby.Messages.subscribe(mGoogleApiClient, mMessageListener, options)
-                .setResultCallback(new ResultCallback<Status>() {
-                    @Override
-                    public void onResult(@NonNull Status status) {
-                        if (status.isSuccess()) {
-                            Log.i(TAG, "Subscribed successfully.");
-                        } else {
-                            mSubscribeSwitch.setChecked(false);
-                        }
-                    }
-                });
-    }
-
-    /**
-     * Publishes a message to nearby devices and updates the UI if the publication either fails or
-     * TTLs.
-     */
-    private void publish() {
-        Log.i(TAG, "Publishing");
-        PublishOptions options = new PublishOptions.Builder()
-                .setStrategy(PUB_SUB_STRATEGY)
-                .setCallback(new PublishCallback() {
-                    @Override
-                    public void onExpired() {
-                        super.onExpired();
-                        Log.i(TAG, "No longer publishing");
-                        getActivity().runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                mPublishSwitch.setChecked(false);
-                            }
-                        });
-                    }
-                }).build();
-
-        Nearby.Messages.publish(mGoogleApiClient, mPubMessage, options)
-                .setResultCallback(new ResultCallback<Status>() {
-                    @Override
-                    public void onResult(@NonNull Status status) {
-                        if (status.isSuccess()) {
-                            Log.i(TAG, "Published successfully.");
-                        } else {
-                            mPublishSwitch.setChecked(false);
-                        }
-                    }
-                });
-    }
-
-    /**
-     * Stops subscribing to messages from nearby devices.
-     */
-    private void unsubscribe() {
-        Log.i(TAG, "Unsubscribing.");
-        Nearby.Messages.unsubscribe(mGoogleApiClient, mMessageListener);
-    }
-
-    /**
-     * Stops publishing message to nearby devices.
-     */
-    private void unpublish() {
-        Log.i(TAG, "Unpublishing.");
-        Nearby.Messages.unpublish(mGoogleApiClient, mPubMessage);
     }
 
 }
