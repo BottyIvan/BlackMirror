@@ -2,8 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.botty.blackmirror">
 
-    <uses-library android:name="com.google.android.things" />
-
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -33,6 +31,8 @@
         <meta-data
             android:name="com.google.android.nearby.messages.API_KEY"
             android:value="@string/APIKey" />
+
+        <uses-library android:name="com.google.android.things" />
     </application>
 
 </manifest>

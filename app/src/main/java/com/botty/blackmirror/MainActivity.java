@@ -1,7 +1,10 @@
 package com.botty.blackmirror;
 
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.DialogInterface;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.text.InputType;
@@ -21,9 +24,13 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
 
-        if (savedInstanceState == null) {
+        if (isNetworkAvailable() || savedInstanceState == null){
             getSupportFragmentManager().beginTransaction()
                     .add(R.id.container, new WeatherFragment())
+                    .commit();
+        } else {
+            getSupportFragmentManager().beginTransaction()
+                    .add(R.id.container, new setUpFragment())
                     .commit();
         }
 
@@ -59,6 +66,14 @@ public class MainActivity extends AppCompatActivity {
                 .findFragmentById(R.id.container);
         wf.changeCity(city);
         new CityPreference(this).setCity(city);
+    }
+
+
+    private boolean isNetworkAvailable() {
+        ConnectivityManager connectivityManager
+                = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+        return activeNetworkInfo != null;
     }
 
 }
